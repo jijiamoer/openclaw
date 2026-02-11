@@ -21,6 +21,7 @@ import type {
 import { filterToolResultMediaUrls } from "./pi-embedded-subscribe.tools.js";
 import type { SubscribeEmbeddedPiSessionParams } from "./pi-embedded-subscribe.types.js";
 import { formatReasoningMessage, stripDowngradedToolCallText } from "./pi-embedded-utils.js";
+import { resolveToolDisplay } from "./tool-display.js";
 import { hasNonzeroUsage, normalizeUsage, type UsageLike } from "./usage.js";
 
 const THINKING_TAG_SCAN_RE = /<\s*(\/?)\s*(?:think(?:ing)?|thought|antthinking)\s*>/gi;
@@ -337,12 +338,15 @@ export function subscribeEmbeddedPiSession(params: SubscribeEmbeddedPiSessionPar
     }
     return `\`\`\`txt\n${trimmed}\n\`\`\``;
   };
+  // 中文注释：支持 per-tool 通知抑制。tool-display-overrides.json 中 hidden=true 的工具不发送通知。
+  const shouldHideToolNotification = (toolName?: string) =>
+    resolveToolDisplay({ name: toolName }).hidden;
   const emitToolResultMessage = (
     toolName: string | undefined,
     message: string,
     result?: unknown,
   ) => {
-    if (!params.onToolResult) {
+    if (!params.onToolResult || shouldHideToolNotification(toolName)) {
       return;
     }
     const { text: cleanedText, mediaUrls } = parseReplyDirectives(message);
@@ -366,7 +370,7 @@ export function subscribeEmbeddedPiSession(params: SubscribeEmbeddedPiSessionPar
     emitToolResultMessage(toolName, agg);
   };
   const emitToolOutput = (toolName?: string, meta?: string, output?: string, result?: unknown) => {
-    if (!output) {
+    if (!output || shouldHideToolNotification(toolName)) {
       return;
     }
     const agg = formatToolAggregate(toolName, meta ? [meta] : undefined, {
