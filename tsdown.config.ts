@@ -158,4 +158,13 @@ export default defineConfig([
       neverBundle: ["@lancedb/lancedb"],
     },
   }),
+  nodeBuildConfig({
+    // Pi loads these as standalone dynamic modules via resolvePiExtensionPath(),
+    // which resolves to <package_root>/pi-extensions/<id>.js (sibling of dist/).
+    entry: [
+      "src/agents/pi-extensions/compaction-safeguard.ts",
+      "src/agents/pi-extensions/context-pruning.ts",
+    ],
+    outDir: "pi-extensions",
+  }),
 ]);
