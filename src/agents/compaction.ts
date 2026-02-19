@@ -1,13 +1,136 @@
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
+import { completeSimple } from "@mariozechner/pi-ai";
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { estimateTokens, generateSummary } from "@mariozechner/pi-coding-agent";
-import type { AgentCompactionIdentifierPolicy } from "../config/types.agent-defaults.js";
+import { convertToLlm, estimateTokens, serializeConversation } from "@mariozechner/pi-coding-agent";
 import { retryAsync } from "../infra/retry.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { DEFAULT_CONTEXT_TOKENS } from "./defaults.js";
 import { repairToolUseResultPairing, stripToolResultDetails } from "./session-transcript-repair.js";
-
 const log = createSubsystemLogger("compaction");
+
+// Pi's generateSummary hardcodes reasoning: "high", which causes providers like newapi
+// to produce empty text output (all tokens consumed by thinking blocks). This local
+// version uses identical prompts/logic but omits the reasoning option.
+const SUMMARIZATION_SYSTEM_PROMPT_LOCAL = `You are a context summarization assistant. Your task is to read a conversation between a user and an AI coding assistant, then produce a structured summary following the exact format specified.
+
+Do NOT continue the conversation. Do NOT respond to any questions in the conversation. ONLY output the structured summary.`;
+
+const SUMMARIZATION_PROMPT_LOCAL = `The messages above are a conversation to summarize. Create a structured context checkpoint summary that another LLM will use to continue the work.
+
+Use this EXACT format:
+
+## Goal
+[What is the user trying to accomplish? Can be multiple items if the session covers different tasks.]
+
+## Constraints & Preferences
+- [Any constraints, preferences, or requirements mentioned by user]
+- [Or "(none)" if none were mentioned]
+
+## Progress
+### Done
+- [x] [Completed tasks/changes]
+
+### In Progress
+- [ ] [Current work]
+
+### Blocked
+- [Issues preventing progress, if any]
+
+## Key Decisions
+- **[Decision]**: [Brief rationale]
+
+## Next Steps
+1. [Ordered list of what should happen next]
+
+## Critical Context
+- [Any data, examples, or references needed to continue]
+- [Or "(none)" if not applicable]
+
+Keep each section concise. Preserve exact file paths, function names, and error messages.`;
+
+const UPDATE_SUMMARIZATION_PROMPT_LOCAL = `The messages above are NEW conversation messages to incorporate into the existing summary provided in <previous-summary> tags.
+
+Update the existing structured summary with new information. RULES:
+- PRESERVE all existing information from the previous summary
+- ADD new progress, decisions, and context from the new messages
+- UPDATE the Progress section: move items from "In Progress" to "Done" when completed
+- UPDATE "Next Steps" based on what was accomplished
+- PRESERVE exact file paths, function names, and error messages
+- If something is no longer relevant, you may remove it
+
+Use this EXACT format:
+
+## Goal
+[Preserve existing goals, add new ones if the task expanded]
+
+## Constraints & Preferences
+- [Preserve existing, add new ones discovered]
+
+## Progress
+### Done
+- [x] [Include previously done items AND newly completed items]
+
+### In Progress
+- [ ] [Current work - update based on progress]
+
+### Blocked
+- [Current blockers - remove if resolved]
+
+## Key Decisions
+- **[Decision]**: [Brief rationale] (preserve all previous, add new)
+
+## Next Steps
+1. [Update based on current state]
+
+## Critical Context
+- [Preserve important context, add new if needed]
+
+Keep each section concise. Preserve exact file paths, function names, and error messages.`;
+
+async function generateSummaryNoReasoning(
+  currentMessages: AgentMessage[],
+  model: NonNullable<ExtensionContext["model"]>,
+  reserveTokens: number,
+  apiKey: string,
+  signal: AbortSignal,
+  customInstructions?: string,
+  previousSummary?: string,
+): Promise<string> {
+  const maxTokens = Math.floor(0.8 * reserveTokens);
+  let basePrompt = previousSummary ? UPDATE_SUMMARIZATION_PROMPT_LOCAL : SUMMARIZATION_PROMPT_LOCAL;
+  if (customInstructions) {
+    basePrompt = `${basePrompt}\n\nAdditional focus: ${customInstructions}`;
+  }
+  // oxlint-disable-next-line typescript/no-explicit-any
+  const llmMessages = convertToLlm(currentMessages as any[]);
+  const conversationText = serializeConversation(llmMessages);
+  let promptText = `<conversation>\n${conversationText}\n</conversation>\n\n`;
+  if (previousSummary) {
+    promptText += `<previous-summary>\n${previousSummary}\n</previous-summary>\n\n`;
+  }
+  promptText += basePrompt;
+  const summarizationMessages = [
+    {
+      role: "user" as const,
+      content: [{ type: "text" as const, text: promptText }],
+      timestamp: Date.now(),
+    },
+  ];
+  // oxlint-disable-next-line typescript/no-explicit-any
+  const response = await completeSimple(
+    model as any,
+    { systemPrompt: SUMMARIZATION_SYSTEM_PROMPT_LOCAL, messages: summarizationMessages },
+    { maxTokens, signal, apiKey },
+  );
+  if (response.stopReason === "error") {
+    throw new Error(`Summarization failed: ${response.errorMessage ?? "Unknown error"}`);
+  }
+  const textContent = response.content
+    .filter((c) => c.type === "text")
+    .map((c) => (c as { type: "text"; text: string }).text)
+    .join("\n");
+  return textContent;
+}
 
 export const BASE_CHUNK_RATIO = 0.4;
 export const MIN_CHUNK_RATIO = 0.15;
@@ -252,7 +375,7 @@ async function summarizeChunks(params: {
   for (const chunk of chunks) {
     summary = await retryAsync(
       () =>
-        generateSummary(
+        generateSummaryNoReasoning(
           chunk,
           model,
           params.reserveTokens,
