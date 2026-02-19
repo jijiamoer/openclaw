@@ -96,13 +96,19 @@ async function generateSummaryNoReasoning(
   customInstructions?: string,
   previousSummary?: string,
 ): Promise<string> {
-  const maxTokens = Math.floor(0.8 * reserveTokens);
+  const requestedMaxTokens = Math.floor(0.8 * reserveTokens);
+  const modelMaxTokens =
+    typeof model.maxTokens === "number" && Number.isFinite(model.maxTokens)
+      ? Math.max(1, Math.floor(model.maxTokens))
+      : requestedMaxTokens;
+  const maxTokens = Math.max(1, Math.min(requestedMaxTokens, modelMaxTokens));
   let basePrompt = previousSummary ? UPDATE_SUMMARIZATION_PROMPT_LOCAL : SUMMARIZATION_PROMPT_LOCAL;
   if (customInstructions) {
     basePrompt = `${basePrompt}\n\nAdditional focus: ${customInstructions}`;
   }
   // oxlint-disable-next-line typescript/no-explicit-any
-  const llmMessages = convertToLlm(currentMessages as any[]);
+  const currentMessagesAny = currentMessages as any[];
+  const llmMessages = convertToLlm(currentMessagesAny);
   const conversationText = serializeConversation(llmMessages);
   let promptText = `<conversation>\n${conversationText}\n</conversation>\n\n`;
   if (previousSummary) {
@@ -117,8 +123,9 @@ async function generateSummaryNoReasoning(
     },
   ];
   // oxlint-disable-next-line typescript/no-explicit-any
+  const modelAny = model as any;
   const response = await completeSimple(
-    model as any,
+    modelAny,
     { systemPrompt: SUMMARIZATION_SYSTEM_PROMPT_LOCAL, messages: summarizationMessages },
     { maxTokens, signal, apiKey },
   );
@@ -129,7 +136,11 @@ async function generateSummaryNoReasoning(
     .filter((c) => c.type === "text")
     .map((c) => (c as { type: "text"; text: string }).text)
     .join("\n");
-  return textContent;
+  const normalized = textContent.trim();
+  if (!normalized) {
+    throw new Error("Summarization produced empty text");
+  }
+  return normalized;
 }
 
 export const BASE_CHUNK_RATIO = 0.4;
