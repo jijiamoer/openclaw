@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   applyPiCompactionSettingsFromConfig,
   DEFAULT_PI_COMPACTION_RESERVE_TOKENS_FLOOR,
+  ensurePiCompactionReserveTokens,
   resolveCompactionReserveTokensFloor,
 } from "./pi-settings.js";
 
@@ -122,6 +123,39 @@ describe("applyPiCompactionSettingsFromConfig", () => {
   });
 });
 
+describe("ensurePiCompactionReserveTokens", () => {
+  it("bumps reserveTokens when below floor", () => {
+    const settingsManager = {
+      getCompactionReserveTokens: () => 16_384,
+      getCompactionKeepRecentTokens: () => 20_000,
+      applyOverrides: vi.fn(),
+    };
+
+    const result = ensurePiCompactionReserveTokens({ settingsManager });
+
+    expect(result).toEqual({
+      didOverride: true,
+      reserveTokens: DEFAULT_PI_COMPACTION_RESERVE_TOKENS_FLOOR,
+    });
+    expect(settingsManager.applyOverrides).toHaveBeenCalledWith({
+      compaction: { reserveTokens: DEFAULT_PI_COMPACTION_RESERVE_TOKENS_FLOOR },
+    });
+  });
+
+  it("does not override when already above floor", () => {
+    const settingsManager = {
+      getCompactionReserveTokens: () => 32_000,
+      getCompactionKeepRecentTokens: () => 20_000,
+      applyOverrides: vi.fn(),
+    };
+
+    const result = ensurePiCompactionReserveTokens({ settingsManager });
+
+    expect(result).toEqual({ didOverride: false, reserveTokens: 32_000 });
+    expect(settingsManager.applyOverrides).not.toHaveBeenCalled();
+  });
+});
+
 describe("resolveCompactionReserveTokensFloor", () => {
   it("returns the default when config is missing", () => {
     expect(resolveCompactionReserveTokensFloor()).toBe(DEFAULT_PI_COMPACTION_RESERVE_TOKENS_FLOOR);
@@ -138,5 +172,46 @@ describe("resolveCompactionReserveTokensFloor", () => {
         agents: { defaults: { compaction: { reserveTokensFloor: 0 } } },
       }),
     ).toBe(0);
+  });
+});
+
+describe("compaction reserveTokensFloor vs model maxTokens safety", () => {
+  /**
+   * Pi's generateSummary historically used: maxTokens = Math.floor(0.8 * reserveTokens).
+   * If reserveTokensFloor > model.maxTokens / 0.8, the summarization call
+   * can exceed the model's limit, causing empty or failed summaries.
+   */
+  it("summary maxTokens derived from floor must not exceed a typical model maxTokens (32000)", () => {
+    const MODEL_MAX_TOKENS = 32_000;
+    const SUMMARY_TOKENS_RATIO = 0.8;
+
+    const floor = resolveCompactionReserveTokensFloor({
+      agents: { defaults: { compaction: { reserveTokensFloor: 40_000 } } },
+    });
+    const summaryMaxTokens = Math.floor(SUMMARY_TOKENS_RATIO * floor);
+
+    expect(summaryMaxTokens).toBeLessThanOrEqual(MODEL_MAX_TOKENS);
+  });
+
+  it("default floor produces safe summary maxTokens for 32k-limited models", () => {
+    const MODEL_MAX_TOKENS = 32_000;
+    const SUMMARY_TOKENS_RATIO = 0.8;
+
+    const floor = resolveCompactionReserveTokensFloor();
+    const summaryMaxTokens = Math.floor(SUMMARY_TOKENS_RATIO * floor);
+
+    expect(summaryMaxTokens).toBeLessThanOrEqual(MODEL_MAX_TOKENS);
+  });
+
+  it("detects misconfiguration: floor:120000 would produce maxTokens exceeding 32k model limit", () => {
+    const MODEL_MAX_TOKENS = 32_000;
+    const SUMMARY_TOKENS_RATIO = 0.8;
+
+    const badFloor = resolveCompactionReserveTokensFloor({
+      agents: { defaults: { compaction: { reserveTokensFloor: 120_000 } } },
+    });
+    const badSummaryMaxTokens = Math.floor(SUMMARY_TOKENS_RATIO * badFloor);
+
+    expect(badSummaryMaxTokens).toBeGreaterThan(MODEL_MAX_TOKENS);
   });
 });
