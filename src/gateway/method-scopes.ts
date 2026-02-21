@@ -230,3 +230,37 @@ export function isGatewayMethodClassified(method: string): boolean {
   }
   return resolveRequiredOperatorScopeForMethod(method) !== undefined;
 }
+
+/**
+ * Returns true if `grantedScopes` covers `requestedScope`, applying implication rules:
+ *   - operator.admin implies all scopes
+ *   - operator.write implies operator.read
+ *
+ * Use this instead of raw Set.has() checks to keep scope semantics consistent
+ * across auth, pairing upgrade checks, and token reuse logic.
+ */
+export function scopeGranted(
+  grantedScopes: readonly string[],
+  requestedScope: OperatorScope,
+): boolean {
+  // At runtime some call sites may still pass arbitrary strings and cast them.
+  // Keep the implication rule scoped to operator.* to avoid accidentally granting
+  // non-operator scopes when operator.admin is present.
+  if (grantedScopes.includes(ADMIN_SCOPE) && requestedScope.startsWith("operator.")) {
+    return true;
+  }
+  if (requestedScope === READ_SCOPE && grantedScopes.includes(WRITE_SCOPE)) {
+    return true;
+  }
+  return grantedScopes.includes(requestedScope);
+}
+
+/**
+ * Returns true if `grantedScopes` covers every scope in `requestedScopes`.
+ */
+export function allScopesGranted(
+  grantedScopes: readonly string[],
+  requestedScopes: readonly OperatorScope[],
+): boolean {
+  return requestedScopes.every((scope) => scopeGranted(grantedScopes, scope));
+}

@@ -288,7 +288,6 @@ function resolvePendingApprovalRole(pending: DevicePairingPendingRequest): strin
   }
   return null;
 }
-
 function newToken() {
   return generatePairingToken();
 }
