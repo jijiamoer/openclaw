@@ -927,6 +927,8 @@ export function attachGatewayWsMessageHandler(params: {
                   return;
                 }
               } else {
+                // roleScopesAllow applies operator scope implication rules (e.g. operator.admin implies
+                // all operator.* scopes) so we don't treat an admin token as a "scope upgrade".
                 const scopesAllowed = roleScopesAllow({
                   role,
                   requestedScopes: scopes,
