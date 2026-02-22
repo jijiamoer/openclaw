@@ -70,6 +70,12 @@ export function buildEmbeddedExtensionFactories(params: {
 }): ExtensionFactory[] {
   const factories: ExtensionFactory[] = [];
   if (resolveCompactionMode(params.cfg) === "safeguard") {
+    if (typeof compactionSafeguardExtension !== "function") {
+      console.warn(
+        "[openclaw] Expected pi-extension compaction-safeguard to be available, but it was not loaded. " +
+          "This usually means the built pi-extension bundle is missing from the install.",
+      );
+    }
     const compactionCfg = params.cfg?.agents?.defaults?.compaction;
     const qualityGuardCfg = compactionCfg?.qualityGuard;
     const contextWindowInfo = resolveContextWindowInfo({
