@@ -733,6 +733,7 @@ export async function runEmbeddedAttempt(
 
       // Sets compaction/pruning runtime state and returns extension factories
       // that must be passed to the resource loader for the safeguard to be active.
+      // This wiring is what makes embedded pi-extensions discoverable at runtime.
       const extensionFactories = buildEmbeddedExtensionFactories({
         cfg: params.config,
         sessionManager,
