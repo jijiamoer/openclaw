@@ -95,6 +95,7 @@
     "message": {
       "emoji": "✉️",
       "title": "Message",
+      "hidden": true,
       "actions": {
         "send": {
           "label": "send",
