@@ -54,6 +54,11 @@ export async function sanitizeSessionMessagesImages(
       allowBase64Only?: boolean;
       includeCamelCase?: boolean;
     };
+    /**
+     * Whether to drop thinking blocks (type: "thinking") from assistant messages.
+     * Defaults to false. Set to true only when preparing messages for user-facing output.
+     */
+    dropThinkingBlocks?: boolean;
   } & ImageSanitizationLimits,
 ): Promise<AgentMessage[]> {
   const sanitizeMode = options?.sanitizeMode ?? "full";
@@ -147,8 +152,20 @@ export async function sanitizeSessionMessagesImages(
                 }
                 return rec.text.trim().length > 0;
               });
+
+        // Drop thinking blocks if requested (only for user-facing output).
+        // Compaction should keep thinking blocks intact.
+        const thinkingFilteredContent = options?.dropThinkingBlocks
+          ? filteredContent.filter((block) => {
+              if (!block || typeof block !== "object") {
+                return true;
+              }
+              const rec = block as { type?: unknown };
+              return rec.type !== "thinking";
+            })
+          : filteredContent;
         const finalContent = (await sanitizeContentBlocksImages(
-          filteredContent as unknown as ContentBlock[],
+          thinkingFilteredContent as unknown as ContentBlock[],
           label,
           imageSanitization,
         )) as unknown as typeof assistantMsg.content;

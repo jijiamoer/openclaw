@@ -69,51 +69,16 @@ export function resolveToolDisplay(params: {
   const title = spec?.title ?? defaultTitle(name);
   const label = spec?.label ?? title;
   const hidden = spec?.hidden ?? false;
-  const actionRaw =
-    params.args && typeof params.args === "object"
-      ? ((params.args as Record<string, unknown>).action as string | undefined)
-      : undefined;
-  const action = typeof actionRaw === "string" ? actionRaw.trim() : undefined;
-  const actionSpec = resolveActionSpec(spec, action);
-  const fallbackVerb =
-    key === "web_search"
-      ? "search"
-      : key === "web_fetch"
-        ? "fetch"
-        : key.replace(/_/g, " ").replace(/\./g, " ");
-  const verb = normalizeVerb(actionSpec?.label ?? action ?? fallbackVerb);
-
-  let detail: string | undefined;
-  if (key === "exec") {
-    detail = resolveExecDetail(params.args);
-  }
-  if (!detail && key === "read") {
-    detail = resolveReadDetail(params.args);
-  }
-  if (!detail && (key === "write" || key === "edit" || key === "attach")) {
-    detail = resolveWriteDetail(key, params.args);
-  }
-
-  if (!detail && key === "web_search") {
-    detail = resolveWebSearchDetail(params.args);
-  }
-
-  if (!detail && key === "web_fetch") {
-    detail = resolveWebFetchDetail(params.args);
-  }
-
-  const detailKeys = actionSpec?.detailKeys ?? spec?.detailKeys ?? FALLBACK.detailKeys ?? [];
-  if (!detail && detailKeys.length > 0) {
-    detail = resolveDetailFromKeys(params.args, detailKeys, {
-      mode: "summary",
-      maxEntries: MAX_DETAIL_ENTRIES,
-      formatKey: (raw) => formatDetailKey(raw, DETAIL_LABEL_OVERRIDES),
-    });
-  }
-
-  if (!detail && params.meta) {
-    detail = params.meta;
-  }
+  let { verb, detail } = resolveToolVerbAndDetailForArgs({
+    toolKey: key,
+    args: params.args,
+    meta: params.meta,
+    spec,
+    fallbackDetailKeys: FALLBACK.detailKeys,
+    detailMode: "summary",
+    detailMaxEntries: MAX_DETAIL_ENTRIES,
+    detailFormatKey: (raw) => formatDetailKey(raw, DETAIL_LABEL_OVERRIDES),
+  });
 
   if (detail) {
     detail = shortenHomeInString(detail);
