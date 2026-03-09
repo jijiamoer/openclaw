@@ -551,6 +551,41 @@ describe("spawnAcpDirect", () => {
     expectAgentGatewayCall(expectedAgentCall);
   });
 
+  it("allows persistent ACP sessions without thread binding", async () => {
+    const result = await spawnAcpDirect(
+      {
+        task: "Investigate flaky tests",
+        agentId: "codex",
+        mode: "session",
+      },
+      {
+        agentSessionKey: "agent:main:main",
+      },
+    );
+
+    expect(result.status).toBe("accepted");
+    expect(result.mode).toBe("session");
+    expect(result.note).toBe(
+      "ACP session stays active after this task; reuse the same session for follow-ups.",
+    );
+    expect(hoisted.sessionBindingBindMock).not.toHaveBeenCalled();
+    expect(hoisted.initializeSessionMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionKey: expect.stringMatching(/^agent:codex:acp:/),
+        agent: "codex",
+        mode: "persistent",
+      }),
+    );
+    const agentCall = hoisted.callGatewayMock.mock.calls
+      .map((call: unknown[]) => call[0] as { method?: string; params?: Record<string, unknown> })
+      .find((request) => request.method === "agent");
+    expect(agentCall?.params?.sessionKey).toBe(result.childSessionKey);
+    expect(agentCall?.params?.deliver).toBe(false);
+    expect(agentCall?.params?.channel).toBeUndefined();
+    expect(agentCall?.params?.to).toBeUndefined();
+    expect(agentCall?.params?.threadId).toBeUndefined();
+  });
+
   it("keeps ACP spawn running when session-file persistence fails", async () => {
     hoisted.resolveSessionTranscriptFileMock.mockRejectedValueOnce(new Error("disk full"));
 

@@ -96,10 +96,9 @@ export type SpawnAcpResult = {
   error?: string;
 };
 
-export const ACP_SPAWN_ACCEPTED_NOTE =
-  "initial ACP task queued in isolated session; follow-ups continue in the bound thread.";
+export const ACP_SPAWN_ACCEPTED_NOTE = "initial ACP task queued in isolated session.";
 export const ACP_SPAWN_SESSION_ACCEPTED_NOTE =
-  "thread-bound ACP session stays active after this task; continue in-thread for follow-ups.";
+  "ACP session stays active after this task; reuse the same session for follow-ups.";
 
 export function resolveAcpSpawnRuntimePolicyError(params: {
   cfg: OpenClawConfig;
@@ -730,12 +729,6 @@ export async function spawnAcpDirect(
     requestedMode: params.mode,
     threadRequested: requestThreadBinding,
   });
-  if (spawnMode === "session" && !requestThreadBinding) {
-    return {
-      status: "error",
-      error: 'mode="session" requires thread=true so the ACP session can stay bound to a thread.',
-    };
-  }
 
   const requesterState = resolveAcpSpawnRequesterState({
     cfg,

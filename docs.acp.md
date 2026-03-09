@@ -225,6 +225,10 @@ updates. Terminal Gateway states map to ACP `done` with stop reasons:
 - ACP runs can be canceled and the active run id is tracked per session.
 - ACP child sessions created through `sessions_spawn` use `agent:<agent-id>:acp:<uuid>`
   session keys and persist `spawnedBy` metadata so the Gateway can track their parent.
+- `sessions_spawn(mode="run")` maps to a one-shot ACP runtime session; OpenClaw
+  closes it after the task completes.
+- `sessions_spawn(mode="session")` maps to a persistent ACP runtime session and
+  can be reused for later follow-up turns even without thread binding.
 
 ## Compatibility
 
@@ -249,7 +253,7 @@ Recommended setup:
   `/tools/invoke` surface.
 - Point the ACP backend at the runtime command you want to verify.
 
-Spawn the ACP session over HTTP:
+Spawn a one-shot ACP smoke session over HTTP:
 
 ```bash
 curl -X POST http://127.0.0.1:18789/tools/invoke \
@@ -273,15 +277,38 @@ Expected result:
 - `childSessionKey: "agent:<agent-id>:acp:<uuid>"`
 - `runId: "<uuid>"`
 
-To verify the runtime actually handled the turn, send a second Gateway `agent`
-request to the returned `childSessionKey` with a fresh `idempotencyKey`, then
-confirm the transcript contains both replies. This proves the full path is
-working:
+This verifies the full dispatch path is working:
 
 - Gateway `/tools/invoke`
 - `sessions_spawn(runtime="acp")`
 - ACP backend/runtime command
-- follow-up turns on the spawned ACP session
+
+It does **not** prove semantic continuity across turns because `mode="run"`
+closes the ACP runtime session after the task completes.
+
+To validate real cross-turn continuity, create a persistent ACP session instead:
+
+```bash
+curl -X POST http://127.0.0.1:18789/tools/invoke \
+  -H 'Authorization: Bearer <token>' \
+  -H 'Content-Type: application/json' \
+  --data-binary '{
+    "tool": "sessions_spawn",
+    "sessionKey": "main",
+    "args": {
+      "task": "Remember this token for later: ACP_PERSIST_NONCE_123. Reply with exactly ACK and nothing else.",
+      "runtime": "acp",
+      "agentId": "codex",
+      "mode": "session",
+      "thread": false
+    }
+  }'
+```
+
+Then send a second Gateway `agent` request to the returned `childSessionKey`
+with a fresh `idempotencyKey` and ask for the token back. Only treat the ACP
+session as persistent if the second reply returns the exact nonce from the first
+turn.
 
 ## Testing
 
