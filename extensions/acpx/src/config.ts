@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildPluginConfigSchema } from "openclaw/plugin-sdk/core";
@@ -70,6 +71,11 @@ export type McpServerConfig = {
   env?: Record<string, string>;
 };
 
+export type AcpxAgentConfig = {
+  command: string;
+  args?: string[];
+};
+
 export type AcpxMcpServer = {
   name: string;
   command: string;
@@ -86,6 +92,7 @@ export type AcpxPluginConfig = {
   strictWindowsCmdWrapper?: boolean;
   timeoutSeconds?: number;
   queueOwnerTtlSeconds?: number;
+  agents?: Record<string, AcpxAgentConfig>;
   mcpServers?: Record<string, McpServerConfig>;
 };
 
@@ -101,6 +108,7 @@ export type ResolvedAcpxPluginConfig = {
   strictWindowsCmdWrapper: boolean;
   timeoutSeconds?: number;
   queueOwnerTtlSeconds: number;
+  agents: Record<string, AcpxAgentConfig>;
   mcpServers: Record<string, McpServerConfig>;
 };
 
@@ -134,6 +142,18 @@ const McpServerConfigSchema = z.object({
     .describe("Environment variables for the MCP server"),
 });
 
+const AcpxAgentConfigSchema = z.object({
+  command: nonEmptyTrimmedString("command must be a non-empty string").describe(
+    "Command to run the ACP harness",
+  ),
+  args: z
+    .array(z.string({ error: "args must be an array of strings" }), {
+      error: "args must be an array of strings",
+    })
+    .optional()
+    .describe("Arguments to pass to the ACP harness command"),
+});
+
 const AcpxPluginConfigSchema = z.strictObject({
   command: nonEmptyTrimmedString("command must be a non-empty string").optional(),
   expectedVersion: nonEmptyTrimmedString("expectedVersion must be a non-empty string").optional(),
@@ -159,6 +179,7 @@ const AcpxPluginConfigSchema = z.strictObject({
     .number({ error: "queueOwnerTtlSeconds must be a number >= 0" })
     .min(0, { error: "queueOwnerTtlSeconds must be a number >= 0" })
     .optional(),
+  agents: z.record(z.string(), AcpxAgentConfigSchema).optional(),
   mcpServers: z.record(z.string(), McpServerConfigSchema).optional(),
 });
 
@@ -173,6 +194,26 @@ function formatAcpxConfigIssue(issue: z.ZodIssue | undefined): string {
     return "expected config object";
   }
   return issue.message;
+}
+
+function isAcpxAgentConfig(value: unknown): value is AcpxAgentConfig {
+  if (!isRecord(value)) {
+    return false;
+  }
+  if (typeof value.command !== "string" || value.command.trim() === "") {
+    return false;
+  }
+  if (value.args !== undefined) {
+    if (!Array.isArray(value.args)) {
+      return false;
+    }
+    for (const arg of value.args) {
+      if (typeof arg !== "string") {
+        return false;
+      }
+    }
+  }
+  return true;
 }
 
 function parseAcpxPluginConfig(value: unknown): ParseResult {
@@ -217,6 +258,38 @@ export function toAcpMcpServers(mcpServers: Record<string, McpServerConfig>): Ac
   }));
 }
 
+function quoteCommandPart(value: string): string {
+  if (value === "") {
+    return '""';
+  }
+  if (/^[A-Za-z0-9_./:@%+=,-]+$/.test(value)) {
+    return value;
+  }
+  return `"${value.replace(/["\\]/g, "\\$&")}"`;
+}
+
+function normalizeAgentName(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function normalizeConfiguredAgents(
+  agents: Record<string, AcpxAgentConfig>,
+): Record<string, AcpxAgentConfig> {
+  return Object.fromEntries(
+    Object.entries(agents).map(([name, agent]) => [
+      normalizeAgentName(name),
+      {
+        command: agent.command.trim(),
+        args: [...(agent.args ?? [])],
+      },
+    ]),
+  );
+}
+
+export function formatConfiguredAgentCommand(agent: AcpxAgentConfig): string {
+  return [agent.command, ...(agent.args ?? [])].map(quoteCommandPart).join(" ");
+}
+
 export function resolveAcpxPluginConfig(params: {
   rawConfig: unknown;
   workspaceDir?: string;
@@ -255,6 +328,7 @@ export function resolveAcpxPluginConfig(params: {
       normalized.strictWindowsCmdWrapper ?? DEFAULT_STRICT_WINDOWS_CMD_WRAPPER,
     timeoutSeconds: normalized.timeoutSeconds,
     queueOwnerTtlSeconds: normalized.queueOwnerTtlSeconds ?? DEFAULT_QUEUE_OWNER_TTL_SECONDS,
+    agents: normalizeConfiguredAgents(normalized.agents ?? {}),
     mcpServers: normalized.mcpServers ?? {},
   };
 }

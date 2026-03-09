@@ -5,6 +5,7 @@ import { applySessionsPatchToStore } from "./sessions-patch.js";
 
 const SUBAGENT_MODEL = "synthetic/hf:moonshotai/Kimi-K2.5";
 const KIMI_SUBAGENT_KEY = "agent:kimi:subagent:child";
+const DROID_ACP_KEY = "agent:droid:acp:child";
 const MAIN_SESSION_KEY = "agent:main:main";
 const EMPTY_CFG = {} as OpenClawConfig;
 
@@ -286,14 +287,11 @@ describe("gateway sessions patch", () => {
   test("sets spawnedBy for ACP sessions", async () => {
     const entry = expectPatchOk(
       await runPatch({
-        storeKey: "agent:main:acp:child",
-        patch: {
-          key: "agent:main:acp:child",
-          spawnedBy: "agent:main:main",
-        },
+        storeKey: DROID_ACP_KEY,
+        patch: { key: DROID_ACP_KEY, spawnedBy: MAIN_SESSION_KEY },
       }),
     );
-    expect(entry.spawnedBy).toBe("agent:main:main");
+    expect(entry.spawnedBy).toBe(MAIN_SESSION_KEY);
   });
 
   test("sets spawnedWorkspaceDir for subagent sessions", async () => {
@@ -312,11 +310,18 @@ describe("gateway sessions patch", () => {
   test("sets spawnDepth for ACP sessions", async () => {
     const entry = expectPatchOk(
       await runPatch({
-        storeKey: "agent:main:acp:child",
-        patch: { key: "agent:main:acp:child", spawnDepth: 2 },
+        storeKey: DROID_ACP_KEY,
+        patch: { key: DROID_ACP_KEY, spawnDepth: 2 },
       }),
     );
     expect(entry.spawnDepth).toBe(2);
+  });
+
+  test("rejects spawnedBy on non-subagent non-ACP sessions", async () => {
+    const result = await runPatch({
+      patch: { key: MAIN_SESSION_KEY, spawnedBy: MAIN_SESSION_KEY },
+    });
+    expectPatchError(result, "spawnedBy is only supported");
   });
 
   test("rejects spawnDepth on non-subagent sessions", async () => {

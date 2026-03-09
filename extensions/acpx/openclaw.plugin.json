@@ -38,6 +38,25 @@
         "type": "number",
         "minimum": 0
       },
+      "agents": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "object",
+          "properties": {
+            "command": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Command to run the ACP harness"
+            },
+            "args": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Arguments to pass to the ACP harness command"
+            }
+          },
+          "required": ["command"]
+        }
+      },
       "mcpServers": {
         "type": "object",
         "additionalProperties": {
@@ -98,6 +117,11 @@
     "queueOwnerTtlSeconds": {
       "label": "Queue Owner TTL Seconds",
       "help": "Idle queue-owner TTL for acpx prompt turns. Keep this short in OpenClaw to avoid delayed completion after each turn.",
+      "advanced": true
+    },
+    "agents": {
+      "label": "Custom ACP Agents",
+      "help": "Optional custom agent command map. Each key becomes an `agentId`, and each value defines the ACP harness command plus optional args to pass through acpx `--agent`.",
       "advanced": true
     },
     "mcpServers": {

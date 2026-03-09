@@ -328,6 +328,7 @@ process.exit(2);
 export async function createMockRuntimeFixture(params?: {
   permissionMode?: ResolvedAcpxPluginConfig["permissionMode"];
   queueOwnerTtlSeconds?: number;
+  agents?: ResolvedAcpxPluginConfig["agents"];
   mcpServers?: ResolvedAcpxPluginConfig["mcpServers"];
 }): Promise<{
   runtime: AcpxRuntime;
@@ -349,6 +350,7 @@ export async function createMockRuntimeFixture(params?: {
     nonInteractivePermissions: "fail",
     strictWindowsCmdWrapper: true,
     queueOwnerTtlSeconds: params?.queueOwnerTtlSeconds ?? 0.1,
+    agents: params?.agents ?? {},
     mcpServers: params?.mcpServers ?? {},
   };
 

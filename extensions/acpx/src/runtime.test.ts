@@ -22,11 +22,12 @@ beforeAll(async () => {
       stripProviderAuthEnvVars: false,
       installCommand: "n/a",
       cwd: process.cwd(),
+      agents: {},
+      mcpServers: {},
       permissionMode: "approve-reads",
       nonInteractivePermissions: "fail",
       strictWindowsCmdWrapper: true,
       queueOwnerTtlSeconds: 0.1,
-      mcpServers: {},
     },
     { logger: NOOP_LOGGER },
   );
@@ -574,6 +575,32 @@ describe("AcpxRuntime", () => {
     const ensureArgs = (logs.find((entry) => entry.kind === "ensure")?.args as string[]) ?? [];
     expect(ensureArgs).not.toContain("--agent");
     expect(ensureArgs).toContain("sh -c whoami");
+    expect(ensureArgs).not.toContain("--agent");
+    expect(ensureArgs).toContain("sh -c whoami");
+  });
+
+  it("routes configured custom agents through raw --agent commands without MCP proxy", async () => {
+    const { runtime, logPath } = await createMockRuntimeFixture({
+      agents: {
+        droid: {
+          command: "/usr/local/bin/droid",
+          args: ["exec", "--output-format", "acp"],
+        },
+      },
+    });
+
+    await runtime.ensureSession({
+      sessionKey: "agent:droid:acp:custom",
+      agent: "droid",
+      mode: "persistent",
+    });
+
+    const logs = await readMockRuntimeLogEntries(logPath);
+    const ensureArgs = (logs.find((entry) => entry.kind === "ensure")?.args as string[]) ?? [];
+    const agentFlagIndex = ensureArgs.indexOf("--agent");
+    expect(agentFlagIndex).toBeGreaterThanOrEqual(0);
+    expect(ensureArgs[agentFlagIndex + 1]).toBe("/usr/local/bin/droid exec --output-format acp");
+    expect(ensureArgs).not.toContain("droid");
   });
 
   it("skips prompt execution when runTurn starts with an already-aborted signal", async () => {

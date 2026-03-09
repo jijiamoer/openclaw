@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -7,8 +8,10 @@ import {
   ACPX_BUNDLED_BIN,
   ACPX_PINNED_VERSION,
   createAcpxPluginConfigSchema,
+  formatConfiguredAgentCommand,
   resolveAcpxPluginRoot,
   resolveAcpxPluginConfig,
+  toAcpMcpServers,
 } from "./config.js";
 
 describe("acpx plugin config parsing", () => {
@@ -145,10 +148,32 @@ describe("acpx plugin config parsing", () => {
     expect(resolved.expectedVersion).toBeUndefined();
   });
 
+  it("accepts custom agent command maps", () => {
+    const resolved = resolveAcpxPluginConfig({
+      rawConfig: {
+        agents: {
+          Droid: {
+            command: "/usr/local/bin/droid",
+            args: ["exec", "--output-format", "acp"],
+          },
+        },
+      },
+      workspaceDir: "/tmp/workspace",
+    });
+
+    expect(resolved.agents).toEqual({
+      droid: {
+        command: "/usr/local/bin/droid",
+        args: ["exec", "--output-format", "acp"],
+      },
+    });
+  });
+
   it("rejects commandArgs overrides", () => {
     expect(() =>
       resolveAcpxPluginConfig({
         rawConfig: {
+          // Legacy/unknown key: should remain rejected.
           commandArgs: ["--foo"],
         },
         workspaceDir: "/tmp/workspace",
@@ -188,11 +213,131 @@ describe("acpx plugin config parsing", () => {
     ).toThrow("strictWindowsCmdWrapper must be a boolean");
   });
 
+  it("accepts mcp server maps", () => {
+    const resolved = resolveAcpxPluginConfig({
+      rawConfig: {
+        mcpServers: {
+          canva: {
+            command: "npx",
+            args: ["-y", "mcp-remote@latest", "https://mcp.canva.com/mcp"],
+            env: {
+              CANVA_TOKEN: "secret",
+            },
+          },
+        },
+      },
+      workspaceDir: "/tmp/workspace",
+    });
+
+    expect(resolved.mcpServers).toEqual({
+      canva: {
+        command: "npx",
+        args: ["-y", "mcp-remote@latest", "https://mcp.canva.com/mcp"],
+        env: {
+          CANVA_TOKEN: "secret",
+        },
+      },
+    });
+  });
+
+  it("rejects invalid mcp server definitions", () => {
+    expect(() =>
+      resolveAcpxPluginConfig({
+        rawConfig: {
+          mcpServers: {
+            canva: {
+              command: "npx",
+              // @ts-expect-error - regression guard: non-string args should fail
+              args: ["-y", 1],
+            },
+          },
+        },
+        workspaceDir: "/tmp/workspace",
+      }),
+    ).toThrow("args must be an array of strings");
+  });
+
+  it("schema accepts mcp server config", () => {
+    const schema = createAcpxPluginConfigSchema();
+    if (!schema.safeParse) {
+      throw new Error("acpx config schema missing safeParse");
+    }
+    const parsed = schema.safeParse({
+      mcpServers: {
+        canva: {
+          command: "npx",
+          args: ["-y", "mcp-remote@latest"],
+          env: {
+            CANVA_TOKEN: "secret",
+          },
+        },
+      },
+    });
+
+    expect(parsed.success).toBe(true);
+  });
+
+  it("schema accepts custom agent config", () => {
+    const schema = createAcpxPluginConfigSchema();
+    if (!schema.safeParse) {
+      throw new Error("acpx config schema missing safeParse");
+    }
+    const parsed = schema.safeParse({
+      agents: {
+        droid: {
+          command: "/usr/local/bin/droid",
+          args: ["exec", "--output-format", "acp"],
+        },
+      },
+    });
+
+    expect(parsed.success).toBe(true);
+  });
+
   it("keeps the runtime json schema in sync with the manifest config schema", () => {
     const manifest = JSON.parse(
       fs.readFileSync(new URL("../openclaw.plugin.json", import.meta.url), "utf8"),
     ) as { configSchema?: unknown };
 
     expect(createAcpxPluginConfigSchema().jsonSchema).toEqual(manifest.configSchema);
+  });
+});
+
+describe("toAcpMcpServers", () => {
+  it("converts plugin config maps into ACP stdio MCP entries", () => {
+    expect(
+      toAcpMcpServers({
+        canva: {
+          command: "npx",
+          args: ["-y", "mcp-remote@latest", "https://mcp.canva.com/mcp"],
+          env: {
+            CANVA_TOKEN: "secret",
+          },
+        },
+      }),
+    ).toEqual([
+      {
+        name: "canva",
+        command: "npx",
+        args: ["-y", "mcp-remote@latest", "https://mcp.canva.com/mcp"],
+        env: [
+          {
+            name: "CANVA_TOKEN",
+            value: "secret",
+          },
+        ],
+      },
+    ]);
+  });
+});
+
+describe("formatConfiguredAgentCommand", () => {
+  it("quotes configured agent args into a single command line", () => {
+    expect(
+      formatConfiguredAgentCommand({
+        command: "/Applications/Factory Droid.app/Contents/MacOS/droid",
+        args: ["exec", "--output-format", "acp"],
+      }),
+    ).toBe('"/Applications/Factory Droid.app/Contents/MacOS/droid" exec --output-format acp');
   });
 });

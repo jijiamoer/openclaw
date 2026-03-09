@@ -12,7 +12,11 @@ import type {
   PluginLogger,
 } from "../runtime-api.js";
 import { AcpRuntimeError } from "../runtime-api.js";
-import { toAcpMcpServers, type ResolvedAcpxPluginConfig } from "./config.js";
+import {
+  formatConfiguredAgentCommand,
+  toAcpMcpServers,
+  type ResolvedAcpxPluginConfig,
+} from "./config.js";
 import { checkAcpxVersion, type AcpxVersionCheckResult } from "./ensure.js";
 import {
   parseJsonLines,
@@ -921,21 +925,25 @@ export class AcpxRuntime implements AcpRuntime {
     agent: string;
     cwd: string;
   }): Promise<string | null> {
+    const configuredAgent = this.config.agents[params.agent.trim().toLowerCase()];
+    const directCommand = configuredAgent ? formatConfiguredAgentCommand(configuredAgent) : null;
     if (Object.keys(this.config.mcpServers).length === 0) {
-      return null;
+      return directCommand;
     }
     const cacheKey = `${params.cwd}::${params.agent}`;
     const cached = this.mcpProxyAgentCommandCache.get(cacheKey);
     if (cached) {
       return cached;
     }
-    const targetCommand = await resolveAcpxAgentCommand({
-      acpxCommand: this.config.command,
-      cwd: params.cwd,
-      agent: params.agent,
-      stripProviderAuthEnvVars: this.config.stripProviderAuthEnvVars,
-      spawnOptions: this.spawnCommandOptions,
-    });
+    const targetCommand =
+      directCommand ??
+      (await resolveAcpxAgentCommand({
+        acpxCommand: this.config.command,
+        cwd: params.cwd,
+        agent: params.agent,
+        stripProviderAuthEnvVars: this.config.stripProviderAuthEnvVars,
+        spawnOptions: this.spawnCommandOptions,
+      }));
     if (!targetCommand) {
       return null;
     }

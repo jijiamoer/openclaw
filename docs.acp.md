@@ -223,6 +223,8 @@ updates. Terminal Gateway states map to ACP `done` with stop reasons:
 - Gateway session state is persisted by the Gateway itself.
 - `--verbose` logs ACP/Gateway bridge events to stderr (never stdout).
 - ACP runs can be canceled and the active run id is tracked per session.
+- ACP child sessions created through `sessions_spawn` use `agent:<agent-id>:acp:<uuid>`
+  session keys and persist `spawnedBy` metadata so the Gateway can track their parent.
 
 ## Compatibility
 
@@ -231,6 +233,55 @@ updates. Terminal Gateway states map to ACP `done` with stop reasons:
   `loadSession`, `prompt`, `cancel`, and `listSessions`.
 - Bridge mode rejects per-session `mcpServers` instead of silently ignoring
   them. Configure MCP at the Gateway or agent layer.
+
+## Manual smoke: ACP runtime session spawn
+
+When debugging an ACP runtime backend such as `acpx`, the shortest end-to-end
+smoke path is to create a session through Gateway tool invocation instead of
+going through an IDE first.
+
+Recommended setup:
+
+- Run an isolated Gateway profile.
+- Enable ACP (`acp.enabled=true`) and allow the target ACP agent in
+  `acp.allowedAgents`.
+- Allow the `sessions_spawn` tool for the caller and for the Gateway HTTP
+  `/tools/invoke` surface.
+- Point the ACP backend at the runtime command you want to verify.
+
+Spawn the ACP session over HTTP:
+
+```bash
+curl -X POST http://127.0.0.1:18789/tools/invoke \
+  -H 'Authorization: Bearer <token>' \
+  -H 'Content-Type: application/json' \
+  --data-binary '{
+    "tool": "sessions_spawn",
+    "sessionKey": "main",
+    "args": {
+      "task": "Reply with exactly ACP_SMOKE_OK and nothing else.",
+      "runtime": "acp",
+      "agentId": "codex",
+      "mode": "run"
+    }
+  }'
+```
+
+Expected result:
+
+- `status: "accepted"`
+- `childSessionKey: "agent:<agent-id>:acp:<uuid>"`
+- `runId: "<uuid>"`
+
+To verify the runtime actually handled the turn, send a second Gateway `agent`
+request to the returned `childSessionKey` with a fresh `idempotencyKey`, then
+confirm the transcript contains both replies. This proves the full path is
+working:
+
+- Gateway `/tools/invoke`
+- `sessions_spawn(runtime="acp")`
+- ACP backend/runtime command
+- follow-up turns on the spawned ACP session
 
 ## Testing
 
