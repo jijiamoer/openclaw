@@ -76,22 +76,15 @@ vi.mock("../../agents/skills/refresh.js", async (importOriginal) => {
     getSkillsSnapshotVersion: vi.fn().mockReturnValue(42),
   };
 });
-vi.mock("../../agents/workspace.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../agents/workspace.js")>();
-  return {
-    ...actual,
-    DEFAULT_IDENTITY_FILENAME: "IDENTITY.md",
-    ensureAgentWorkspace: vi.fn().mockResolvedValue({ dir: "/tmp/workspace" }),
-  };
-});
+vi.mock("../../agents/workspace.js", () => ({
+  DEFAULT_IDENTITY_FILENAME: "IDENTITY.md",
+  ensureAgentWorkspace: vi.fn().mockResolvedValue({ dir: "/tmp/workspace" }),
+}));
 
-vi.mock("../../agents/model-catalog.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../agents/model-catalog.js")>();
-  return {
-    ...actual,
-    loadModelCatalog: vi.fn().mockResolvedValue({ models: [] }),
-  };
-});
+vi.mock("../../agents/model-catalog.js", () => ({
+  loadModelCatalog: vi.fn().mockResolvedValue({ models: [] }),
+}));
+
 
 vi.mock("../../agents/model-selection.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../agents/model-selection.js")>();
