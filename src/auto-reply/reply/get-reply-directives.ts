@@ -6,7 +6,8 @@ import { resolveSandboxRuntimeStatus } from "../../agents/sandbox/runtime-status
 import type { SkillCommandSpec } from "../../agents/skills.js";
 import type { OpenClawConfig } from "../../config/config.js";
 import type { SessionEntry } from "../../config/sessions.js";
-import { normalizeAgentId } from "../../routing/session-key.js";
+import { resolveAccountEntry } from "../../routing/account-lookup.js";
+import { normalizeAccountId, normalizeAgentId } from "../../routing/session-key.js";
 import { shouldHandleTextCommands } from "../commands-text-routing.js";
 import type { MsgContext, TemplateContext } from "../templating.js";
 import type { ElevatedLevel, ReasoningLevel, ThinkLevel, VerboseLevel } from "../thinking.js";
@@ -40,6 +41,33 @@ function loadSkillCommands() {
   return skillCommandsPromise;
 }
 
+function shouldLogDirectiveTiming(): boolean {
+  return process.env.OPENCLAW_DEBUG_INGRESS_TIMING === "1";
+}
+
+function resolveChannelReasoningDefault(params: {
+  cfg: OpenClawConfig;
+  providerKey: string;
+  accountId?: string | null;
+}): ReasoningLevel | undefined {
+  if (params.providerKey !== "telegram") {
+    return undefined;
+  }
+  const channels = params.cfg.channels as
+    | Record<
+        string,
+        { reasoningDefault?: unknown; accounts?: Record<string, { reasoningDefault?: unknown }> }
+      >
+    | undefined;
+  const channelCfg = channels?.telegram;
+  if (!channelCfg) {
+    return undefined;
+  }
+  const accountId = normalizeAccountId(params.accountId);
+  const accountCfg = resolveAccountEntry(channelCfg.accounts, accountId);
+  const raw = accountCfg?.reasoningDefault ?? channelCfg.reasoningDefault;
+  return raw === "off" || raw === "on" || raw === "stream" ? raw : undefined;
+}
 export type ReplyDirectiveContinuation = {
   commandSource: string;
   command: ReturnType<typeof buildCommandContext>;
@@ -383,9 +411,16 @@ export async function resolveReplyDirectives(params: {
     directives.verboseLevel ??
     (sessionEntry?.verboseLevel as VerboseLevel | undefined) ??
     (agentCfg?.verboseDefault as VerboseLevel | undefined);
+  const channelReasoningDefault = resolveChannelReasoningDefault({
+    cfg,
+    providerKey: messageProviderKey,
+    accountId: sessionCtx.AccountId,
+  });
+  const hasChannelReasoningDefault = channelReasoningDefault !== undefined;
   let resolvedReasoningLevel: ReasoningLevel =
     directives.reasoningLevel ??
     (sessionEntry?.reasoningLevel as ReasoningLevel | undefined) ??
+    channelReasoningDefault ??
     (agentEntry?.reasoningDefault as ReasoningLevel | undefined) ??
     "off";
   const resolvedElevatedLevel = elevatedAllowed
@@ -441,6 +476,7 @@ export async function resolveReplyDirectives(params: {
   const reasoningExplicitlySet =
     directives.reasoningLevel !== undefined ||
     (sessionEntry?.reasoningLevel !== undefined && sessionEntry?.reasoningLevel !== null) ||
+    hasChannelReasoningDefault ||
     hasAgentReasoningDefault;
   const thinkingActive = resolvedThinkLevelWithDefault !== "off";
   if (!reasoningExplicitlySet && resolvedReasoningLevel === "off" && !thinkingActive) {

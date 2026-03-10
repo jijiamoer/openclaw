@@ -152,6 +152,8 @@ export type TelegramAccountConfig = {
    */
   streaming?: TelegramStreamingMode | boolean;
   /** Disable block streaming for this account. */
+  /** Default /reasoning level for new sessions (off|on|stream). */
+  reasoningDefault?: "off" | "on" | "stream";
   blockStreaming?: boolean;
   /** @deprecated Legacy chunking config from `streamMode: "block"`; ignored after migration. */
   draftChunk?: BlockStreamingChunkConfig;

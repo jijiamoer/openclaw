@@ -124,13 +124,20 @@ type TelegramReasoningLevel = "off" | "on" | "stream";
 
 function resolveTelegramReasoningLevel(params: {
   cfg: OpenClawConfig;
+  telegramCfg: TelegramAccountConfig;
   sessionKey?: string;
   agentId: string;
   telegramDeps: TelegramBotDeps;
 }): TelegramReasoningLevel {
-  const { cfg, sessionKey, agentId, telegramDeps } = params;
+  const fallback: TelegramReasoningLevel =
+    telegramCfg.reasoningDefault === "on" ||
+    telegramCfg.reasoningDefault === "off" ||
+    telegramCfg.reasoningDefault === "stream"
+      ? telegramCfg.reasoningDefault
+      : "off";
+  const { cfg, telegramCfg, sessionKey, agentId, telegramDeps } = params;
   if (!sessionKey) {
-    return "off";
+    return fallback;
   }
   try {
     const storePath = telegramDeps.resolveStorePath(cfg.session?.store, { agentId });
@@ -139,13 +146,13 @@ function resolveTelegramReasoningLevel(params: {
     });
     const entry = resolveSessionStoreEntry({ store, sessionKey }).existing;
     const level = entry?.reasoningLevel;
-    if (level === "on" || level === "stream") {
+    if (level === "off" || level === "on" || level === "stream") {
       return level;
     }
   } catch {
     // Fall through to default.
   }
-  return "off";
+  return fallback;
 }
 
 export const dispatchTelegramMessage = async ({
@@ -196,6 +203,7 @@ export const dispatchTelegramMessage = async ({
       : cfg.agents?.defaults?.blockStreamingDefault === "on";
   const resolvedReasoningLevel = resolveTelegramReasoningLevel({
     cfg,
+    telegramCfg,
     sessionKey: ctxPayload.SessionKey,
     agentId: route.agentId,
     telegramDeps,
