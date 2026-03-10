@@ -676,7 +676,7 @@ export const dispatchTelegramMessage = async ({
               continue;
             }
             if (info.kind === "final") {
-              if (reasoningLane.hasStreamedMessage) {
+              if (reasoningLane.hasStreamedMessage && resolvedReasoningLevel === "stream") {
                 activePreviewLifecycleByLane.reasoning = "complete";
                 retainPreviewOnCleanupByLane.reasoning = true;
               }
