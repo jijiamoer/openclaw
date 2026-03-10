@@ -684,10 +684,6 @@ export const dispatchTelegramMessage = async ({
               continue;
             }
             if (info.kind === "final") {
-              if (reasoningLane.hasStreamedMessage && resolvedReasoningLevel === "stream") {
-                activePreviewLifecycleByLane.reasoning = "complete";
-                retainPreviewOnCleanupByLane.reasoning = true;
-              }
               reasoningStepState.resetForNextStep();
             }
           }
@@ -843,9 +839,17 @@ export const dispatchTelegramMessage = async ({
       existing.shouldClear = existing.shouldClear && shouldClear;
     }
     for (const [stream, cleanupState] of streamCleanupStates) {
-      await stream.stop();
+      try {
+        await stream.stop();
+      } catch (err) {
+        logVerbose(`telegram: draft stream stop failed: ${String(err)}`);
+      }
       if (cleanupState.shouldClear) {
-        await stream.clear();
+        try {
+          await stream.clear();
+        } catch (err) {
+          logVerbose(`telegram: draft stream clear failed: ${String(err)}`);
+        }
       }
     }
     for (const archivedPreview of archivedAnswerPreviews) {
