@@ -10,6 +10,32 @@ import type { VoyageEmbeddingClient } from "./embeddings-voyage.js";
 
 const realNow = Date.now.bind(Date);
 
+vi.mock("../infra/net/fetch-guard.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../infra/net/fetch-guard.js")>();
+  return {
+    ...actual,
+    fetchWithSsrFGuard: async ({
+      url,
+      init,
+      fetchImpl,
+    }: {
+      url: string;
+      init?: RequestInit;
+      fetchImpl?: typeof fetch;
+    }) => {
+      const impl = fetchImpl ?? fetch;
+      const response = await impl(url, init);
+      return { response, finalUrl: url, release: async () => {} };
+    },
+  };
+});
+
+// Mock internal.js if needed, but runWithConcurrency is simple enough to keep real.
+// We DO need to mock retryAsync to avoid actual delays/retries logic complicating tests
+vi.mock("../infra/retry.js", () => ({
+  retryAsync: async <T>(fn: () => Promise<T>) => fn(),
+}));
+
 describe("runVoyageEmbeddingBatches", () => {
   const mockClient: VoyageEmbeddingClient = {
     baseUrl: "https://api.voyageai.com/v1",

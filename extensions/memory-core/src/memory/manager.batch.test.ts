@@ -10,6 +10,26 @@ import { mockPublicPinnedHostname } from "./test-helpers/ssrf.js";
 type MemoryIndexManager = import("./index.js").MemoryIndexManager;
 type MemoryIndexModule = typeof import("./index.js");
 
+vi.mock("../infra/net/fetch-guard.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../infra/net/fetch-guard.js")>();
+  return {
+    ...actual,
+    fetchWithSsrFGuard: async ({
+      url,
+      init,
+      fetchImpl,
+    }: {
+      url: string;
+      init?: RequestInit;
+      fetchImpl?: typeof fetch;
+    }) => {
+      const impl = fetchImpl ?? fetch;
+      const response = await impl(url, init);
+      return { response, finalUrl: url, release: async () => {} };
+    },
+  };
+});
+
 const embedBatch = vi.fn(async (_texts: string[]) => [] as number[][]);
 const embedQuery = vi.fn(async () => [0.5, 0.5, 0.5]);
 let getMemorySearchManager: MemoryIndexModule["getMemorySearchManager"];

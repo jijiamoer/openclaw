@@ -76,7 +76,6 @@ vi.mock("../../agents/skills/refresh.js", async (importOriginal) => {
     getSkillsSnapshotVersion: vi.fn().mockReturnValue(42),
   };
 });
-
 vi.mock("../../agents/workspace.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../agents/workspace.js")>();
   return {
