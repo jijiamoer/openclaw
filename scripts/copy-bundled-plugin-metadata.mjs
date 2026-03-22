@@ -35,6 +35,37 @@ function rewritePackageEntry(entry) {
   return `./${rewritten}`;
 }
 
+function resolveExistingBundledPackageEntry(params) {
+  const rewritten = rewritePackageEntry(params.entry);
+  if (!rewritten) {
+    return undefined;
+  }
+  const resolved = ensurePathInsideRoot(params.distPluginDir, rewritten);
+  if (fs.existsSync(resolved)) {
+    return rewritten;
+  }
+  console.warn(
+    `[bundled-plugin-metadata] dropping missing packaged ${params.kind} ${rewritten} (plugin ${params.pluginId})`,
+  );
+  return undefined;
+}
+
+function rewriteExistingPackageExtensions(params) {
+  if (!Array.isArray(params.entries)) {
+    return undefined;
+  }
+  return params.entries
+    .map((entry) =>
+      resolveExistingBundledPackageEntry({
+        entry,
+        distPluginDir: params.distPluginDir,
+        pluginId: params.pluginId,
+        kind: "extension entry",
+      }),
+    )
+    .filter((entry) => typeof entry === "string");
+}
+
 function ensurePathInsideRoot(rootDir, rawPath) {
   const resolved = path.resolve(rootDir, rawPath);
   const relative = path.relative(rootDir, resolved);
@@ -227,14 +258,30 @@ export function copyBundledPluginMetadata(params = {}) {
       removeFileIfExists(distPackageJsonPath);
       continue;
     }
-    if (packageJson.openclaw && "extensions" in packageJson.openclaw) {
-      packageJson.openclaw = {
-        ...packageJson.openclaw,
-        extensions: rewritePackageExtensions(packageJson.openclaw.extensions),
-        ...(typeof packageJson.openclaw.setupEntry === "string"
-          ? { setupEntry: rewritePackageEntry(packageJson.openclaw.setupEntry) }
-          : {}),
-      };
+    if (packageJson && packageJson.openclaw && typeof packageJson.openclaw === "object") {
+      const pluginId = manifest.id ?? dirent.name;
+      const nextOpenClaw = { ...packageJson.openclaw };
+      if ("extensions" in nextOpenClaw) {
+        nextOpenClaw.extensions = rewriteExistingPackageExtensions({
+          entries: nextOpenClaw.extensions,
+          distPluginDir,
+          pluginId,
+        });
+      }
+      if (typeof nextOpenClaw.setupEntry === "string") {
+        const rewrittenSetupEntry = resolveExistingBundledPackageEntry({
+          entry: nextOpenClaw.setupEntry,
+          distPluginDir,
+          pluginId,
+          kind: "setup entry",
+        });
+        if (rewrittenSetupEntry) {
+          nextOpenClaw.setupEntry = rewrittenSetupEntry;
+        } else {
+          delete nextOpenClaw.setupEntry;
+        }
+      }
+      packageJson.openclaw = nextOpenClaw;
     }
 
     writeTextFileIfChanged(distPackageJsonPath, `${JSON.stringify(packageJson, null, 2)}\n`);

@@ -54,6 +54,8 @@ describe("copyBundledPluginMetadata", () => {
       name: "@openclaw/acpx",
       openclaw: { extensions: ["./index.ts"] },
     });
+    fs.mkdirSync(path.join(repoRoot, "dist", "extensions", "acpx"), { recursive: true });
+    fs.writeFileSync(path.join(repoRoot, "dist", "extensions", "acpx", "index.js"), "", "utf8");
 
     copyBundledPluginMetadata({ repoRoot });
 
@@ -77,6 +79,35 @@ describe("copyBundledPluginMetadata", () => {
       fs.readFileSync(path.join(repoRoot, "dist", "extensions", "acpx", "package.json"), "utf8"),
     ) as { openclaw?: { extensions?: string[] } };
     expect(packageJson.openclaw?.extensions).toEqual(["./index.js"]);
+  });
+
+  it("drops missing packaged extension entries and setupEntry from bundled package metadata", () => {
+    const repoRoot = makeRepoRoot("openclaw-bundled-plugin-missing-entries-");
+    const pluginDir = path.join(repoRoot, "extensions", "googlechat");
+    fs.mkdirSync(pluginDir, { recursive: true });
+    writeJson(path.join(pluginDir, "openclaw.plugin.json"), {
+      id: "googlechat",
+      configSchema: { type: "object" },
+    });
+    writeJson(path.join(pluginDir, "package.json"), {
+      name: "@openclaw/googlechat",
+      openclaw: {
+        extensions: ["./index.ts"],
+        setupEntry: "./setup-entry.ts",
+      },
+    });
+    fs.mkdirSync(path.join(repoRoot, "dist", "extensions", "googlechat"), { recursive: true });
+
+    copyBundledPluginMetadata({ repoRoot });
+
+    const packageJson = JSON.parse(
+      fs.readFileSync(
+        path.join(repoRoot, "dist", "extensions", "googlechat", "package.json"),
+        "utf8",
+      ),
+    ) as { openclaw?: { extensions?: string[]; setupEntry?: string } };
+    expect(packageJson.openclaw?.extensions).toEqual([]);
+    expect(packageJson.openclaw).not.toHaveProperty("setupEntry");
   });
 
   it("relocates node_modules-backed skill paths into bundled-skills and rewrites the manifest", () => {
