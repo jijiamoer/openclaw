@@ -247,7 +247,6 @@ describe("acpx plugin config parsing", () => {
           mcpServers: {
             canva: {
               command: "npx",
-              // @ts-expect-error - regression guard: non-string args should fail
               args: ["-y", 1],
             },
           },
